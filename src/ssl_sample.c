@@ -32,6 +32,7 @@
 #include <haproxy/ssl_utils.h>
 #include <haproxy/tools.h>
 #include <haproxy/vars.h>
+#include <import/ebsttree.h>
 
 
 /***** Below are some sample fetching functions for ACL/patterns *****/
@@ -1178,6 +1179,51 @@ smp_fetch_ssl_x_key_alg(const struct arg *args, struct sample *smp, const char *
 
 	return 1;
 }
+static int smp_check_ssl_f_has_cert(struct arg *args, struct sample_conv *conv,
+                          const char *file, int line, char **err)
+{
+	if (args[0].type == ARGT_STOP)
+		return 1;
+	return 0;
+}
+
+static int smp_fetch_ssl_f_has_cert(const struct arg *args, struct sample *smp, void *private)
+{
+	int i;
+	struct ebmb_node *node, *n;
+	struct bind_conf *s = smp->sess->listener->bind_conf;
+	int ret = 0;
+	char fqdn[512];
+
+	printf("INITED\n");
+	if (!smp_make_rw(smp))
+		return 0;
+
+	strncpy(fqdn, smp->data.u.str.area, smp->data.u.str.data);
+	printf("MY FQDN IS >>%s<<\n", fqdn);
+
+/*
+XXX TODO SSL
+	for (i = 0; i < trash.size && i < servername_len; i++) {
+		trash.area[i] = tolower(servername[i]);
+		if (!wildp && (trash.area[i] == '.'))
+			wildp = &trash.area[i];
+	}
+	trash.area[i] = 0;
+*/
+
+	if(fqdn) {
+		node = ebst_lookup(&s->sni_ctx, fqdn);
+		printf("Node is %p\n", node);
+		ret = (node != NULL);
+	}
+
+
+
+	smp->data.type = SMP_T_BOOL;
+	smp->data.u.sint = ret;
+	return 1;
+}
 
 /* boolean, returns true if front conn. transport layer is SSL.
  * This function is also usable on backend conn if the fetch keyword 5th
@@ -1191,8 +1237,8 @@ smp_fetch_ssl_fc(const struct arg *args, struct sample *smp, const char *kw, voi
 	if (obj_type(smp->sess->origin) == OBJ_TYPE_CHECK)
 		conn = (kw[4] == 'b') ? cs_conn(__objt_check(smp->sess->origin)->cs) : NULL;
 	else
-		conn = (kw[4] != 'b') ? objt_conn(smp->sess->origin) :
-			smp->strm ? cs_conn(objt_cs(smp->strm->si[1].end)) : NULL;
+		conn = (kw[4] != 'b') ? objt_conn(smp->sess->origin) : smp->strm ? cs_conn(objt_cs(smp->strm->si[1].end))
+										 : NULL;
 
 	smp->data.type = SMP_T_BOOL;
 	smp->data.u.sint = (conn && conn->xprt == &ssl_sock);
@@ -1228,8 +1274,8 @@ smp_fetch_ssl_fc_is_resumed(const struct arg *args, struct sample *smp, const ch
 	if (obj_type(smp->sess->origin) == OBJ_TYPE_CHECK)
 		conn = (kw[4] == 'b') ? cs_conn(__objt_check(smp->sess->origin)->cs) : NULL;
 	else
-		conn = (kw[4] != 'b') ? objt_conn(smp->sess->origin) :
-			smp->strm ? cs_conn(objt_cs(smp->strm->si[1].end)) : NULL;
+		conn = (kw[4] != 'b') ? objt_conn(smp->sess->origin) : smp->strm ? cs_conn(objt_cs(smp->strm->si[1].end))
+										 : NULL;
 
 	ssl = ssl_sock_get_ssl_object(conn);
 
@@ -1251,8 +1297,8 @@ smp_fetch_ssl_fc_cipher(const struct arg *args, struct sample *smp, const char *
 	if (obj_type(smp->sess->origin) == OBJ_TYPE_CHECK)
 		conn = (kw[4] == 'b') ? cs_conn(__objt_check(smp->sess->origin)->cs) : NULL;
 	else
-		conn = (kw[4] != 'b') ? objt_conn(smp->sess->origin) :
-			smp->strm ? cs_conn(objt_cs(smp->strm->si[1].end)) : NULL;
+		conn = (kw[4] != 'b') ? objt_conn(smp->sess->origin) : smp->strm ? cs_conn(objt_cs(smp->strm->si[1].end))
+										 : NULL;
 
 	smp->flags = 0;
 	ssl = ssl_sock_get_ssl_object(conn);
@@ -2232,6 +2278,7 @@ INITCALL1(STG_REGISTER, sample_register_fetches, &sample_fetch_keywords);
 
 /* Note: must not be declared <const> as its list will be overwritten */
 static struct sample_conv_kw_list sample_conv_kws = {ILH, {
+	{ "ssl_f_has_certificate",  smp_fetch_ssl_f_has_cert, 0,             smp_check_ssl_f_has_cert,SMP_T_BOOL,  SMP_T_BOOL},
 	{ "sha2",               sample_conv_sha2,             ARG1(0, SINT),            smp_check_sha2,          SMP_T_BIN,  SMP_T_BIN  },
 #ifdef EVP_CIPH_GCM_MODE
 	{ "aes_gcm_dec",        sample_conv_aes_gcm_dec,      ARG4(4,SINT,STR,STR,STR), check_aes_gcm,           SMP_T_BIN,  SMP_T_BIN  },
